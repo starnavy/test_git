@@ -1,0 +1,89 @@
+/* Query 1 - query used for 1st insight; Question Set #1 Q1 */
+
+SELECT DISTINCT(film_title),
+        film_category,
+		COUNT(film_title) OVER (PARTITION BY film_title) AS rental_count
+FROM
+	(SELECT f.title film_title,
+	 		 c.name film_category
+	 FROM rental r
+	 LEFT JOIN inventory i
+	 ON r.inventory_id = i.inventory_id
+	 LEFT JOIN film f
+	 ON i.film_id = f.film_id
+	 LEFT JOIN film_category f_c
+	 ON f.film_id = f_c.film_id
+	 LEFT JOIN category c
+	 ON f_c.category_id = c.category_id
+	 WHERE c.name IN ('Animation','Children','Classics','Comedy','Family','Music')) sub
+ORDER BY 2,1;
+
+
+/* Query 2 - query used for 2nd insight; Question Set #1 Q3 */
+
+WITH film_cte AS (
+	SELECT f.title film_title,
+			c.name film_category,
+			f.rental_duration rental_duration
+	FROM film f
+	LEFT JOIN film_category f_c
+	ON f.film_id = f_c.film_id
+	LEFT JOIN category c
+	ON f_c.category_id = c.category_id
+	WHERE c.name IN ('Animation','Children','Classics','Comedy','Family','Music'))
+
+SELECT film_category,
+		standard_quantile,
+		COUNT(film_title) AS counts
+FROM
+	(SELECT DISTINCT(film_title),
+	 		 film_category,
+	 		 rental_duration,
+	 		 NTILE(4) OVER (ORDER BY rental_duration) AS standard_quantile
+	 FROM film_cte) sub
+GROUP BY 1,2
+ORDER BY 1,2;
+
+
+/* Query 3 - query used for 2nd insight; Question Set #2 Q1 */
+SELECT DATE_PART('year', r.rental_date) rental_year,
+		DATE_PART('month', r.rental_date) rental_month,
+		s.store_id,
+		COUNT(r.rental_id) rental_count
+FROM rental r
+LEFT JOIN staff s
+ON r.staff_id = s.staff_id
+GROUP BY 1,2,3
+ORDER BY 4 DESC;
+
+
+/* Query 4 - query used for 2nd insight; Question Set #2 Q3 */
+WITH payment_cte AS (
+	SELECT DATE_TRUNC('month',p.payment_date) AS pay_month,
+			c.first_name || ' ' || c.last_name AS customer_name,
+			payment_id,
+			amount
+	FROM payment p
+	LEFT JOIN customer c
+	ON p.customer_id = c.customer_id
+	WHERE DATE_TRUNC('month',p.payment_date) BETWEEN '2007-01-01' AND '2008-01-01'
+	AND p.customer_id IN
+		(SELECT customer_id
+		 FROM   payment
+		 GROUP BY customer_id
+		 ORDER BY SUM(amount) DESC LIMIT 10))
+
+SELECT pay_month,
+		customer_name,
+		pay_countpermonth, pay_amount,
+		LAG(pay_amount) OVER (PARTITION BY customer_name ORDER BY pay_month) AS lag,
+		pay_amount - LAG(pay_amount) OVER (PARTITION BY customer_name ORDER BY pay_month) AS lag_difference
+FROM
+	(SELECT pay_month,
+	 		 customer_name,
+	 		 COUNT(payment_id) pay_countpermonth,
+	 		 SUM(amount) pay_amount
+	 FROM payment_cte
+	 GROUP BY 2,1
+	 ORDER BY 2,1) sub
+ORDER BY 6;
